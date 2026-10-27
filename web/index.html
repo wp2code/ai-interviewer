@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AI 面试机器人 · 实时语音面试演示</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --panel-2: #1e222b;
+    --border: #2a2f3a;
+    --text: #e8eaed;
+    --text-dim: #9aa3b2;
+    --accent: #4f8cff;
+    --ok: #3fb950;
+    --warn: #d29922;
+    --err: #f85149;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+                 "Microsoft YaHei", sans-serif;
+    font-size: 14px; line-height: 1.6;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 24px 20px 60px; }
+  header { display:flex; align-items:center; gap:12px; margin-bottom:20px; }
+  h1 { font-size: 18px; font-weight: 500; margin:0; }
+  .badge {
+    font-size: 12px; padding: 2px 8px; border-radius: 10px;
+    background: var(--panel-2); color: var(--text-dim); border:1px solid var(--border);
+  }
+  .grid { display:grid; grid-template-columns: 1fr 360px; gap:16px; align-items:start; }
+  @media (max-width: 940px) { .grid { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--panel); border:1px solid var(--border);
+    border-radius: 12px; padding:16px;
+  }
+  .card h2 {
+    font-size:13px; font-weight:500; margin:0 0 12px; color:var(--text-dim);
+    text-transform: none; letter-spacing:.3px;
+  }
+  label { display:block; font-size:12px; color:var(--text-dim); margin:10px 0 4px; }
+  input, textarea {
+    width:100%; background: var(--panel-2); border:1px solid var(--border);
+    color:var(--text); border-radius:8px; padding:8px 10px; font-size:13px;
+    font-family: inherit; resize: vertical;
+  }
+  input:focus, textarea:focus { outline:none; border-color: var(--accent); }
+  button {
+    background: var(--accent); color:#fff; border:none; border-radius:8px;
+    padding:9px 16px; font-size:13px; cursor:pointer; font-family:inherit;
+    margin-right:8px; margin-top:12px;
+  }
+  button:disabled { background: var(--border); color:var(--text-dim); cursor:not-allowed; }
+  button.ghost { background: transparent; border:1px solid var(--border); color:var(--text); }
+  #transcript { height: 380px; overflow-y:auto; margin:0; padding:0; list-style:none; }
+  .turn { padding:10px 0; border-bottom:1px solid var(--border); }
+  .turn:last-child { border-bottom:none; }
+  .who { font-size:11px; color:var(--text-dim); margin-bottom:3px; letter-spacing:.5px; }
+  .who.bot { color: var(--accent); }
+  .who.me { color: var(--ok); }
+  .txt { white-space:pre-wrap; word-break:break-word; }
+  .status {
+    display:flex; align-items:center; gap:8px; font-size:12px;
+    color:var(--text-dim); margin-bottom:10px; min-height:20px;
+  }
+  .dot { width:8px; height:8px; border-radius:50%; background:var(--text-dim); }
+  .dot.live { background:var(--ok); animation:pulse 1.4s infinite; }
+  .dot.think { background:var(--warn); animation:pulse .8s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.25} }
+  .level-bar { height:4px; background:var(--panel-2); border-radius:2px; overflow:hidden; margin:6px 0 2px; }
+  .level-bar > i { display:block; height:100%; background:var(--accent); }
+  .dim { margin-bottom:12px; }
+  .dim .name { display:flex; justify-content:space-between; font-size:12px; margin-bottom:4px; }
+  .dim .name b { font-weight:500; }
+  .dim .name span { color:var(--text-dim); }
+  .flag {
+    background: rgba(248,81,73,.09); border:1px solid rgba(248,81,73,.35);
+    border-radius:8px; padding:8px 10px; margin-bottom:8px; font-size:12px;
+  }
+  .flag b { color:var(--err); font-weight:500; }
+  .hint { font-size:12px; color:var(--text-dim); margin-top:10px; line-height:1.7; }
+  kbd {
+    background:var(--panel-2); border:1px solid var(--border); border-radius:4px;
+    padding:1px 5px; font-size:11px; font-family: ui-monospace, Menlo, monospace;
+  }
+  .rec { font-size:12px; color:var(--text-dim); }
+  .rec b { color:var(--text); font-weight:500; }
+  table { width:100%; border-collapse:collapse; font-size:12px; margin-top:8px; }
+  th,td { text-align:left; padding:5px 6px; border-bottom:1px solid var(--border); }
+  th { color:var(--text-dim); font-weight:400; }
+  .ev { color:var(--text-dim); font-size:11px; line-height:1.5; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>AI 面试机器人</h1>
+    <span class="badge">实时语音面试 · WebRTC 演示</span>
+    <span class="badge" id="engine-badge">引擎检测中…</span>
+  </header>
+
+  <div class="grid">
+    <!-- 左栏：面试 -->
+    <div>
+      <div class="card" style="margin-bottom:16px">
+        <h2>面试配置</h2>
+        <label for="job">目标岗位</label>
+        <input id="job" value="后端工程师" />
+        <label for="resume">简历摘要（用于生成贴合背景的提问）</label>
+        <textarea id="resume" rows="4" placeholder="例如：5年后端经验，主要做高并发交易系统，用过 Go / Redis / Kafka，带过 3 人小组……">5 年后端经验，主要做高并发交易系统，Go / Redis / Kafka，曾优化大促期间的支付链路，带过 3 人小组。</textarea>
+        <button id="btn-start">开始面试</button>
+        <button id="btn-stop" class="ghost" disabled>结束</button>
+        <button id="btn-mock" class="ghost">模拟一轮对话</button>
+        <div class="hint">
+          演示环境使用浏览器原生 <b>Web Speech API</b> 做语音识别与合成、<b>Web Audio API</b> 做实时 VAD。
+          生产部署把这两处替换为云 ASR / TTS 即可，服务端协议不变。<br />
+          说话时可直接打断机器人；也可按 <kbd>Enter</kbd> 用文字回答。
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>对话记录</h2>
+        <div class="status">
+          <span class="dot" id="dot"></span><span id="status-text">未开始</span>
+        </div>
+        <ul id="transcript"></ul>
+      </div>
+    </div>
+
+    <!-- 右栏：评估 -->
+    <div>
+      <div class="card" style="margin-bottom:16px">
+        <h2>实时评估</h2>
+        <div id="dims"><div class="hint">面试进行中，维度分数会随证据累积实时更新。</div></div>
+      </div>
+      <div class="card" style="margin-bottom:16px">
+        <h2>红旗信号</h2>
+        <div id="flags"><div class="hint">暂无。</div></div>
+      </div>
+      <div class="card">
+        <h2>结论</h2>
+        <div id="verdict"><div class="hint">面试结束后生成。</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const el = {
+    dot: $('dot'), status: $('status-text'), transcript: $('transcript'),
+    dims: $('dims'), flags: $('flags'), verdict: $('verdict'),
+    btnStart: $('btn-start'), btnStop: $('btn-stop'), btnMock: $('btn-mock'),
+  };
+
+  let ws = null;
+  let mediaStream = null;
+  let audioCtx = null;
+  let vadTimer = null;
+  let recog = null;
+  let speaking = false;
+  let lastFinal = '';
+  let speechStartedAt = 0;
+  let speechActive = false;
+
+  const setStatus = (text, cls) => {
+    el.status.textContent = text;
+    el.dot.className = 'dot' + (cls ? ' ' + cls : '');
+  };
+
+  const addTurn = (who, text) => {
+    const li = document.createElement('li');
+    li.className = 'turn';
+    li.innerHTML = `<div class="who ${who === 'bot' ? 'bot' : 'me'}">${who === 'bot' ? 'AI 面试官' : '候选人'}</div><div class="txt"></div>`;
+    li.querySelector('.txt').textContent = text;
+    el.transcript.appendChild(li);
+    el.transcript.scrollTop = el.transcript.scrollHeight;
+  };
+
+  const send = (obj) => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); };
+
+  // ---------------------------------------------------------------- TTS
+  function speak(text) {
+    if (!('speechSynthesis' in window)) return;
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'zh-CN';
+    u.rate = 1.05;
+    u.onend = () => {
+      speaking = false;
+      send({ type: 'bot_speech_done' });
+      setStatus('聆听中…', 'live');
+    };
+    speaking = true;
+    setStatus('AI 面试官正在说话…');
+    speechSynthesis.speak(u);
+  }
+  const stopSpeaking = () => { if ('speechSynthesis' in window) speechSynthesis.cancel(); speaking = false; };
+
+  // ---------------------------------------------------------------- VAD
+  // 浏览器端实时 VAD：RMS 能量 + 自适应噪声基底。
+  // 端点检测（静音多久算说完）在服务端做，这里只负责"有人声/没人声"。
+  function startVAD() {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const src = audioCtx.createMediaStreamSource(mediaStream);
+    const analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 1024;
+    analyser.smoothingTimeConstant = 0.6;
+    src.connect(analyser);
+
+    const buf = new Uint8Array(analyser.fftSize);
+    let noiseFloor = 0.02;
+
+    vadTimer = setInterval(() => {
+      if (speaking) return; // 机器人说话时不做 VAD，避免自触发
+      analyser.getByteTimeDomainData(buf);
+      let sum = 0;
+      for (let i = 0; i < buf.length; i++) {
+        const v = (buf[i] - 128) / 128;
+        sum += v * v;
+      }
+      const rms = Math.sqrt(sum / buf.length);
+      noiseFloor = noiseFloor * 0.95 + rms * 0.05;
+      const prob = Math.min(1, Math.max(0, (rms - noiseFloor) / 0.06 + 0.05));
+
+      send({ type: 'vad', speech_prob: prob.toFixed(3), t_ms: Date.now() });
+
+      if (prob > 0.5) {
+        if (!speechActive) { speechActive = true; speechStartedAt = Date.now(); }
+      } else if (speechActive && Date.now() - speechStartedAt > 300) {
+        // 语音结束：让 ASR 收尾
+        speechActive = false;
+        send({ type: 'asr_final', text: lastFinal, ts_start_ms: speechStartedAt, ts_end_ms: Date.now() });
+        lastFinal = '';
+      }
+    }, 100);
+  }
+
+  // ---------------------------------------------------------------- ASR
+  function startASR() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { setStatus('当前浏览器不支持语音识别，请用文字输入'); return; }
+    recog = new SR();
+    recog.lang = 'zh-CN';
+    recog.continuous = true;
+    recog.interimResults = true;
+    recog.onresult = (e) => {
+      let fin = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        if (e.results[i].isFinal) fin += e.results[i][0].transcript;
+      }
+      if (fin) { lastFinal = fin; addTurn('me', fin); }
+    };
+    recog.onend = () => { try { recog.start(); } catch (e) {} };
+    recog.start();
+  }
+
+  // ---------------------------------------------------------------- 渲染
+  function renderDims(report) {
+    if (!report || !report.dimensions) return;
+    el.dims.innerHTML = report.dimensions.map((d) => {
+      const pct = d.level === 0 ? 0 : (d.level / 5) * 100;
+      return `<div class="dim">
+        <div class="name"><b>${d.dimension_name}</b><span>${d.level_label} · ${d.score_100} 分 · 置信 ${d.confidence}</span></div>
+        <div class="level-bar"><i style="width:${pct}%"></i></div>
+        <div class="ev">${(d.evidence || []).map((e) => '「' + e.quote.slice(0, 46) + '」').join(' ') || '（无证据）'}</div>
+      </div>`;
+    }).join('');
+  }
+
+  function renderFlags(flags) {
+    if (!flags || !flags.length) { el.flags.innerHTML = '<div class="hint">暂无。</div>'; return; }
+    el.flags.innerHTML = flags.map((f) =>
+      `<div class="flag"><b>[${f.severity.toUpperCase()}] ${f.title}</b><br />${f.detail}</div>`).join('');
+  }
+
+  function renderVerdict(r) {
+    const map = { advance: '建议进入下一轮', hold: '建议人工复核', reject: '建议淘汰' };
+    el.verdict.innerHTML = `
+      <div class="rec">推荐结论：<b>${map[r.recommendation] || r.recommendation}</b></div>
+      <div class="rec" style="margin-top:6px">综合分：<b>${r.total_score_100}</b> · 整体置信度：<b>${r.overall_confidence}</b></div>
+      <div class="rec" style="margin-top:8px;color:var(--text-dim)">${r.recommendation_reason}</div>`;
+  }
+
+  // ---------------------------------------------------------------- 连接
+  el.btnStart.onclick = async () => {
+    el.btnStart.disabled = true;
+    el.transcript.innerHTML = '';
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    ws = new WebSocket(`${proto}://${location.host}/ws/interview`);
+
+    ws.onopen = async () => {
+      send({ type: 'start', job_title: $('job').value, resume: $('resume').value });
+      try {
+        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        startVAD();
+        startASR();
+        el.btnStop.disabled = false;
+      } catch (e) {
+        setStatus('麦克风权限被拒绝，可用文字输入');
+      }
+    };
+
+    ws.onmessage = (ev) => {
+      const m = JSON.parse(ev.data);
+      if (m.type === 'say') { addTurn('bot', m.text); speak(m.text); }
+      else if (m.type === 'listen') setStatus('聆听中…', 'live');
+      else if (m.type === 'cut') { stopSpeaking(); setStatus('已打断，继续聆听'); }
+      else if (m.type === 'final_report') {
+        renderDims(m.report); renderFlags(m.report.red_flags); renderVerdict(m.report);
+        setStatus('面试结束'); stopSpeaking();
+        el.btnStop.disabled = true;
+      }
+    };
+
+    ws.onclose = () => { setStatus('连接已断开'); el.btnStart.disabled = false; };
+  };
+
+  el.btnStop.onclick = () => { send({ type: 'stop' }); stopSpeaking(); };
+
+  // 无麦克风时的兜底：点按钮模拟一轮回答
+  el.btnMock.onclick = () => {
+    const samples = [
+      '我主导过电商大促期间的支付链路重构。当时的问题是下单峰值达到平时二十倍，支付接口的 P99 延迟从 800 毫秒涨到了 5 秒。我做了三件事：把同步扣减改成异步队列削峰，给热点商品做了本地缓存预热，还有就是把日志落盘从同步改成异步。优化完 P99 降到了 120 毫秒，大促期间零资损。',
+      '那个项目主要是我们团队一起做的，我负责后端服务这一块。前端和测试是其他同事负责的。整体效果还不错，用户下单的转化率提升了大概百分之十五。',
+    ];
+    const idx = Math.min(el.transcript.querySelectorAll('.who.me').length, samples.length - 1);
+    const text = samples[idx];
+    addTurn('me', text);
+    send({ type: 'asr_final', text, ts_start_ms: Date.now() - 8000, ts_end_ms: Date.now() });
+  };
+
+  // 文字输入
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' || e.shiftKey) return;
+    const tag = document.activeElement.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    const t = prompt('你的回答：');
+    if (t) { addTurn('me', t); send({ type: 'asr_final', text: t, ts_start_ms: Date.now(), ts_end_ms: Date.now() }); }
+  });
+
+  // 引擎能力检测
+  const hasSR = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+  const hasTTS = 'speechSynthesis' in window;
+  $('engine-badge').textContent = `ASR ${hasSR ? '✓' : '✗'} · TTS ${hasTTS ? '✓' : '✗'}`;
+})();
+</script>
+</body>
+</html>
